@@ -1,25 +1,30 @@
 import pandas as pd #funktioita
 import json
 import sqlite3
+# Import necessary libraries
 
 
-# Lataa JSON-tiedosto
+# Load JSON file
 with open('15946.json', 'r') as file:
     data = json.load(file)
 
+# Create player_positions, teams, positions, players,
+# countries and cards dataframe
 player_positions = pd.json_normalize(
     data,
     record_path=['lineup', 'positions'],
     meta=[['lineup', 'player_id']],
     errors='ignore'
 )
+# Drop columns not needed for the player_positions dataframe
 player_positions.drop(columns=["position", "from", "to", "from_period", "to_period", "start_reason", "end_reason"], inplace=True)
+# Drop lineup. from player_id
 player_positions.rename(columns={'lineup.player_id': 'player_id'}, inplace=True)
-# print(player_positions)
 
-# Normalisoi joukkue-, pelaaja, sekä pelipaikkadata
+
 teams = pd.json_normalize(data, meta=['team_id', 'team_name'])
-teams = teams[['team_id', 'team_name']]  # Valitse vain tarvittavat sarakkeet
+# Choose only necessary columns
+teams = teams[['team_id', 'team_name']]
 # print(teams.head())
 # print(teams.dtypes)
 
@@ -32,6 +37,7 @@ positions = pd.json_normalize(
     meta=[],
     errors='ignore'
 )
+# Rename 'from' and 'to'
 positions.rename(columns={'from': 'from_time', 'to': 'to_time'}, inplace=True)
 
 
@@ -45,10 +51,9 @@ players.rename(columns={"country.id": "country_id"}, inplace=True)
 players.drop(columns=["country.name"], inplace=True)
 players.drop(columns=["cards"], inplace=True)
 players.drop(columns=["positions"], inplace=True)
+# Show all columns when printing
 pd.set_option('display.max_columns', None)
 
-
-# Normalisoi 'lineup' ja poimi 'country.id' ja 'country.name'
 countries = pd.json_normalize(
     data,
     record_path='lineup',
@@ -56,15 +61,7 @@ countries = pd.json_normalize(
     errors='ignore'
 )[['country.id', 'country.name']].drop_duplicates()
 
-# Nimeä sarakkeet selkeästi
 countries.rename(columns={'country.id': 'country_id', 'country.name': 'country_name'}, inplace=True)
-
-# print(countries.columns)
-# Tarkista tulos
-# print(countries)
-
-
-# positions.rename(columns={'from': 'from_time', 'to': 'to_time'}, inplace=True)
 
 cards = pd.json_normalize(
     data,
@@ -75,38 +72,25 @@ cards = pd.json_normalize(
 cards.rename(columns={'lineup.player_id': 'player_id'}, inplace=True)
 # print(cards)
 
-# Lisää card_id -sarake, jossa on uniikki arvo (esim. automaattisesti kasvava numero)
+# Add 'card_id' which has a unique growing value
 cards['card_id'] = range(1, len(cards) + 1)
 
-# Tarkista tulos
-# print(cards.columns)
 
-# Siirrä player_id vasemmalle sarakkeiden järjestyksessä
+
+# Move player_id left
 columns_order = ['player_id', 'card_id'] + [col for col in cards.columns if col not in ['player_id', 'card_id']]
 cards = cards[columns_order]
 
-# Tarkista tulos
-# print(cards)
-
-
-# positions = pd.merge(positions, teams, on='team_id', how='left')
-
-# Täydennä mahdollisesti puuttuvat tiedot
-# positions['team_name'] = positions['team_name'].fillna('Unknown Team')  # Esimerkki oletusarvosta
-# positions['player_id'] = positions['lineup.player_id']  # Varmista, että player_id on mukana
-
-
-# pd.set_option('display.max_columns', None)
-# print(positions)
 
 # ------SQL-------
 
-# Luodaan yhteys tietokantaan
+# Connect to the database
 conn = sqlite3.connect('football.db')
 
-# Luo kursori SQL-komentojen suorittamiseen
+# Create cursor for SQL
 cursor = conn.cursor()
 
+# Create all the necessary tables
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS PlayerPositions (
     position_id INTEGER,
@@ -170,20 +154,10 @@ cursor.execute('''
 )
 ''')
 
-
-
+# stop the cursor
 conn.commit()
 
-
-
-
-# df = pd.read_json('15946.json')
-
-# Vie DataFrame SQL-tietokantaan
-# filtered_positions = positions[['team_id', 'team_name']]
-# filtered_positions.columns = ['team_id', 'team_name']  # Varmista oikeat sarakenimet
-
-# teams = df[['team_id', 'team_name']].drop_duplicates()
+# Move the dataframes to the database
 player_positions.to_sql('PlayerPositions', conn, if_exists='replace', index=False)
 teams.to_sql('Teams', conn, if_exists='replace', index=False)
 
@@ -198,9 +172,9 @@ countries.to_sql('Countries', conn, if_exists='replace', index=False)
 
 
 
-# Tarkista tietokannan sisältö
+# Check the tables have the wanted data
 results_player_positions = pd.read_sql('SELECT * FROM PlayerPositions', conn)
-# print(results_player_positions)
+print(results_player_positions)
 
 
 results_teams = pd.read_sql('SELECT * FROM Teams', conn)
