@@ -5,21 +5,44 @@ import sqlite3
 
 
 # Load JSON file
-with open('15946.json', 'r') as file:
+with open('15946.json', 'r', encoding='utf-8') as file:
     data = json.load(file)
 
 # Create player_positions, teams, positions, players,
 # countries and cards dataframe
-player_positions = pd.json_normalize(
+positions = pd.json_normalize(
     data,
     record_path=['lineup', 'positions'],
-    meta=[['lineup', 'player_id']],
+    meta=[],
     errors='ignore'
 )
 # Drop columns not needed for the player_positions dataframe
-player_positions.drop(columns=["position", "from", "to", "from_period", "to_period", "start_reason", "end_reason"], inplace=True)
-# Drop lineup. from player_id
-player_positions.rename(columns={'lineup.player_id': 'player_id'}, inplace=True)
+positions.drop(columns=["from", "to", "from_period", "to_period", "start_reason", "end_reason"], inplace=True)
+
+# Create function to group positions
+def group_position(pos):
+    if pos == "Goalkeeper":
+        return "Goalkeeper"
+    elif pos in ["Left Center Back", "Right Center Back", "Centre Back"]:
+        return "Centre Back"
+    elif pos in ["Left Back"]:
+        return "Left Back"
+    elif pos in ["Right Back"]:
+        return "Right Back"
+    elif pos in ["Left Center Midfield", "Right Center Midfield", "Left Defensive Midfield",
+                 "Right Defensive Midfield"]:
+        return "Midfield"
+    elif pos in ["Left Wing", "Right Wing", "Left Midfield", "Right Midfield"]:
+        return "Winger"
+    elif pos in ["Center Forward", "Left Center Forward", "Right Center Forward", "Attacker", "Striker"]:
+        return "Attacker"
+    else:
+        return "Other"
+
+# Lisää position_group-sarake DataFrameen
+positions['position_group'] = positions['position'].apply(group_position)
+
+positions = positions.drop_duplicates(subset=['position'])
 
 
 teams = pd.json_normalize(data, meta=['team_id', 'team_name'])
@@ -28,18 +51,37 @@ teams = teams[['team_id', 'team_name']]
 # print(teams.head())
 # print(teams.dtypes)
 
-
-
-
-positions = pd.json_normalize(
+player_positions = pd.json_normalize(
     data,
     record_path=['lineup', 'positions'],
-    meta=[],
+    meta=[['lineup', 'player_id'], ['lineup', 'player_name']],
     errors='ignore'
 )
+player_positions.rename(columns={'lineup.player_id': 'player_id'}, inplace=True)
+player_positions.rename(columns={'lineup.player_name': 'player_name'}, inplace=True)
+player_positions.drop(columns=["position"], inplace=True)
 # Rename 'from' and 'to'
-positions.rename(columns={'from': 'from_time', 'to': 'to_time'}, inplace=True)
+player_positions.rename(columns={'from': 'from_time', 'to': 'to_time'}, inplace=True)
+# If to_time value = none, make it 90.00
+player_positions['to_time'] = player_positions['to_time'].fillna('90:00')
 
+
+# Function to adjust minutes and seconds for visualization
+def parse_time_to_minutes(value):
+    if pd.isna(value):
+        return 0
+    try:
+        minutes, seconds = map(int, value.split(':'))
+        return minutes + seconds / 60
+    except:
+        return 0
+
+# Change time to minutes
+player_positions['from_time_minutes'] = player_positions['from_time'].apply(parse_time_to_minutes)
+player_positions['to_time_minutes'] = player_positions['to_time'].apply(parse_time_to_minutes)
+
+# Count minutes
+player_positions['minutes_played'] = player_positions['to_time_minutes'] - player_positions['from_time_minutes']
 
 players = pd.json_normalize(
     data,
@@ -92,12 +134,11 @@ cursor = conn.cursor()
 
 # Create all the necessary tables
 cursor.execute('''
-    CREATE TABLE IF NOT EXISTS PlayerPositions (
+    CREATE TABLE IF NOT EXISTS Positions (
     position_id INTEGER,
-    player_id INTEGER,
-    PRIMARY KEY (position_id, player_id),
-    FOREIGN KEY (position_id) REFERENCES Positions(position_id),
-    FOREIGN KEY (player_id) REFERENCES Players(player_id)
+    position TEXT,
+    position_group TEXT,
+    PRIMARY KEY (position_id)
     )
 ''')
 
@@ -109,16 +150,23 @@ cursor.execute('''
 ''')
 
 cursor.execute('''
-    CREATE TABLE IF NOT EXISTS Positions (
+    CREATE TABLE IF NOT EXISTS PlayerPositions (
     position_id INTEGER,
-    position TEXT,
     from_time TEXT,
     to_time TEXT,
     from_period INTEGER,
     to_period INTEGER,
     start_reason TEXT,
     end_reason TEXT,
-    PRIMARY KEY (position_id, player_id, team_id)
+    player_id INTEGER,
+    from_time_minutes FLOAT,
+    to_time_minutes FLOAT,
+    minutes_played FLOAT,
+    player_name TEXT,
+    PRIMARY KEY (position_id, player_id),
+    FOREIGN KEY (position_id) REFERENCES Positions(position_id),
+    FOREIGN KEY (player_id) REFERENCES Players(player_id),
+    FOREIGN KEY (player_name) REFERENCES Players(player_name)
     )
 ''')
 
@@ -154,6 +202,8 @@ cursor.execute('''
 )
 ''')
 
+
+
 # stop the cursor
 conn.commit()
 
@@ -182,7 +232,7 @@ results_teams = pd.read_sql('SELECT * FROM Teams', conn)
 
 results_positions = pd.read_sql('SELECT * FROM Positions', conn)
 pd.set_option('display.max_columns', None)
-# print(results_positions)
+print(results_positions)
 
 results_players = pd.read_sql('SELECT * FROM Players', conn)
 pd.set_option('display.max_columns', None)
