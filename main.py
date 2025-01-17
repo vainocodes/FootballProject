@@ -1,8 +1,7 @@
-import pandas as pd #funktioita
+import pandas as pd
 import json
 import sqlite3
 # Import necessary libraries
-
 
 # Load JSON file
 with open('15946.json', 'r', encoding='utf-8') as file:
@@ -39,11 +38,9 @@ def group_position(pos):
     else:
         return "Other"
 
-# Lisää position_group-sarake DataFrameen
+# Add position_group to position dataframe, to simplify visualizations
 positions['position_group'] = positions['position'].apply(group_position)
-
 positions = positions.drop_duplicates(subset=['position'])
-
 
 teams = pd.json_normalize(data, meta=['team_id', 'team_name'])
 # Choose only necessary columns
@@ -201,34 +198,25 @@ cursor.execute('''
     country_name TEXT
 )
 ''')
-
-
-
 # stop the cursor
 conn.commit()
+
 
 # Move the dataframes to the database
 player_positions.to_sql('PlayerPositions', conn, if_exists='replace', index=False)
 teams.to_sql('Teams', conn, if_exists='replace', index=False)
-
 players.to_sql('Players', conn, if_exists='replace', index=False)
-
-# positions = df[['position_id', 'position', 'player_id', 'team_id', 'from_time', 'to_time', 'from_period', 'to_period', 'start_reason', 'end_reason']].drop_duplicates()
 positions.to_sql('Positions', conn, if_exists='replace', index=False)
-
 cards.to_sql('Cards', conn, if_exists='replace', index=False)
-
 countries.to_sql('Countries', conn, if_exists='replace', index=False)
 
 
-
-# Check the tables have the wanted data
+# Check the tables have the wanted data, and print the data on the tables
 results_player_positions = pd.read_sql('SELECT * FROM PlayerPositions', conn)
 print(results_player_positions)
 
-
 results_teams = pd.read_sql('SELECT * FROM Teams', conn)
-# print(results_teams)
+print(results_teams)
 
 results_positions = pd.read_sql('SELECT * FROM Positions', conn)
 pd.set_option('display.max_columns', None)
@@ -236,15 +224,15 @@ print(results_positions)
 
 results_players = pd.read_sql('SELECT * FROM Players', conn)
 pd.set_option('display.max_columns', None)
-# print(results_players)
+print(results_players)
 
 results_cards = pd.read_sql('SELECT * FROM Cards', conn)
 pd.set_option('display.max_columns', None)
-# print(results_cards)
+print(results_cards)
 
 results_countries = pd.read_sql('SELECT * FROM Countries', conn)
 pd.set_option('display.max_columns', None)
-# print(results_countries)
+print(results_countries)
 
 
 
